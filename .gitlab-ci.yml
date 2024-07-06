@@ -1,0 +1,53 @@
+image: node:18
+
+stages:
+  - build
+  - test
+  - deploy
+
+cache:
+  paths:
+    - node_modules/
+
+variables:
+  # Define environment-specific variables here
+  REACT_APP_API_URL: "$REACT_APP_API_URL"
+  SSH_PRIVATE_KEY: "$CI_PRIVATE_KEY"  # Make sure to add your CI/CD variables for SSH private key and server IP.
+  API_URL: "$API_URL"  # Make sure to add your CI/CD variables for SSH private key and server IP.
+  NODE_ENV: "$NODE_ENV"  # Make sure to add your CI/CD variables for SSH private key and server IP.
+  SSH_HOST: "$SSH_HOST"  # Make sure to add your CI/CD variables for SSH private key and server IP.
+  SSH_USER: "$SSH_USER"  # Make sure to add your CI/CD variables for SSH private key and server IP.
+
+build:
+  stage: build
+  script:
+    - npm install
+    - npm run build
+  artifacts:
+    paths:
+      - dist/
+
+deploy:
+  stage: deploy
+  environment:
+    name: stage
+  script:
+    - echo "Creating a deployment package..."
+    - mkdir deploy
+    - tar -czf deploy/app.tar.gz -C dist .
+    - apt-get update -qq
+    - apt-get install -qq git ssh
+    - "which ssh-agent || ( apt-get install -qq openssh-client )"
+    - install -m 600 -D /dev/null ~/.ssh/id_rsa
+    - eval $(ssh-agent -s)
+    - ssh-add <(echo "$SSH_PRIVATE_KEY")
+    - echo "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
+    - ssh-keyscan -H $SSH_HOST > ~/.ssh/known_hosts
+    - mkdir -p ~/.ssh
+    - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\n" > ~/.ssh/config'
+    - scp deploy/app.tar.gz $SSH_USER@$SSH_HOST:/var/www/stage.likesoft.io
+    # SSH into the server and deploy the app
+    - ssh $SSH_USER@$SSH_HOST "cd /var/www/stage.likesoft.io && tar -xzf app.tar.gz"
+  only:
+    - stage  # Deploy only when changes are pushed to the master branch
+  when: always
